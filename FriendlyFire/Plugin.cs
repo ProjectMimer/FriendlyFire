@@ -1,20 +1,19 @@
-using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using System.Collections.Generic;
-using FFXIVClientStructs.FFXIV.Common.Configuration;
-using System;
-using Dalamud.Memory;
+using SettingsManager;
 
 namespace FriendlyFire
 {
     public unsafe class Plugin : IDalamudPlugin
     {
-        [PluginService] public static DalamudPluginInterface? PluginInterface { get; private set; } = null;
+        [PluginService] public static IDalamudPluginInterface? iPluginInterface { get; private set; } = null;
         [PluginService] public static IFramework? iFramework { get; private set; } = null;
+        [PluginService] public static ICommandManager? CommandManager { get; private set; } = null;
         [PluginService] public static IClientState? ClientState { get; private set; } = null;
         [PluginService] public static ICondition? Condition { get; private set; } = null;
         [PluginService] public static IChatGui? ChatGui { get; private set; } = null;
@@ -22,8 +21,7 @@ namespace FriendlyFire
 
         public string Name => "FriendlyFire";
 
-        private ConfigBase*[] cfgBase = new ConfigBase*[4];
-        private Dictionary<string, List<Tuple<uint, uint>>> MappedSettings = new Dictionary<string, List<Tuple<uint, uint>>>();
+        public static ConfigManager cfgManager = new ConfigManager();
 
         private Dictionary<int, bool> targetSettignsPerClass = new Dictionary<int, bool>();
         private byte curClassJob = 0;
@@ -40,6 +38,7 @@ namespace FriendlyFire
         public void Dispose()
         {
             iFramework!.Update -= Update;
+            cfgManager.Dispose();
             pluginReady = false;
         }
 
@@ -47,7 +46,7 @@ namespace FriendlyFire
         {
             if (pluginReady)
             {
-                PlayerCharacter? player = ClientState!.LocalPlayer;
+                IPlayerCharacter? player = ClientState!.LocalPlayer;
                 if (player != null)
                 {
                     Character* characer = (Character*)player.Address;
@@ -58,7 +57,7 @@ namespace FriendlyFire
                         uint optionValue = 1;
                         if (targetSettignsPerClass.ContainsKey(curClassJob))
                             optionValue = 0;
-                        SetSettingsValue(MappedSettings["AutoNearestTarget"], optionValue);
+                        cfgManager.SetSettingsValue("AutoNearestTarget", optionValue);
                     }
                 }
             }
@@ -69,33 +68,11 @@ namespace FriendlyFire
 
         private void Initialize()
         {
-            cfgBase[0] = &(frameworkInstance->SystemConfig.CommonSystemConfig.ConfigBase);
-            cfgBase[1] = &(frameworkInstance->SystemConfig.CommonSystemConfig.UiConfig);
-            cfgBase[2] = &(frameworkInstance->SystemConfig.CommonSystemConfig.UiControlConfig);
-            cfgBase[3] = &(frameworkInstance->SystemConfig.CommonSystemConfig.UiControlGamepadConfig);
-
             List<string> cfgSearchStrings = new List<string>() {
-                "AutoNearestTarget"
-                };
-
-            MappedSettings.Clear();
-            for (uint cfgId = 0; cfgId < cfgBase.Length; cfgId++)
-            {
-                for (uint i = 0; i < cfgBase[cfgId]->ConfigCount; i++)
-                {
-                    ConfigEntry cfgItem = cfgBase[cfgId]->ConfigEntry[i];
-                    if (cfgItem.Type == 0)
-                        continue;
-
-                    string name = MemoryHelper.ReadStringNullTerminated(new IntPtr(cfgItem.Name));
-                    if (cfgSearchStrings.Contains(name))
-                    {
-                        if (!MappedSettings.ContainsKey(name))
-                            MappedSettings[name] = new List<Tuple<uint, uint>>();
-                        MappedSettings[name].Add(new Tuple<uint, uint>(cfgId, i));
-                    }
-                }
-            }
+                "AutoNearestTarget",
+            };
+            cfgManager.AddToList(cfgSearchStrings);
+            cfgManager.MapSettings();
 
             targetSettignsPerClass.Add(5, true);  // Bard
             targetSettignsPerClass.Add(6, true);  // White Mage
@@ -111,19 +88,7 @@ namespace FriendlyFire
             targetSettignsPerClass.Add(35, true); // Red Mage
             targetSettignsPerClass.Add(38, true); // Dancer
             targetSettignsPerClass.Add(40, true); // Sage
-        }
-
-        private void SetSettingsValue(List<Tuple<uint, uint>> list, uint value)
-        {
-            foreach (Tuple<uint, uint> item in list)
-                cfgBase[item.Item1]->ConfigEntry[item.Item2].SetValueUInt(value);
-        }
-
-        private uint GetSettingsValue(List<Tuple<uint, uint>> list, int index)
-        {
-            if (index >= list.Count)
-                return 0;
-            return cfgBase[list[index].Item1]->ConfigEntry[list[index].Item2].Value.UInt;
+            targetSettignsPerClass.Add(42, true); // Pictomancer
         }
     }
 }
